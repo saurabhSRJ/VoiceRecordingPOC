@@ -1,5 +1,5 @@
 # STT-TTS-Android
-A demo application showcasing Speech-to-text and Text-to-speech in Android.
+A demo application showcasing Speech-to-text and Recording voice input using Mic
 
 ![ui screenshot](https://i.postimg.cc/8kRtY3Jf/Screenshot-1590828973.png)
 
