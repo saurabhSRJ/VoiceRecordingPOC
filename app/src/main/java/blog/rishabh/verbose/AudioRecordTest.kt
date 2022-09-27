@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.os.Bundle
+import android.os.CountDownTimer
 import android.util.Log
 import android.view.View.OnClickListener
 import android.view.ViewGroup
@@ -18,7 +19,7 @@ import java.io.IOException
 
 private const val LOG_TAG = "AudioRecordTest"
 private const val REQUEST_RECORD_AUDIO_PERMISSION = 200
-private const val NO_VOLUME_THRESHOLD = 2000
+private const val MAX_BACKGROUND_NOISE_THRESHOLD = 5000
 private const val SAMPLING_DELAY = 1500L
 
 class AudioRecordTest : AppCompatActivity(), Timer.OnTimerTickListener {
@@ -30,6 +31,8 @@ class AudioRecordTest : AppCompatActivity(), Timer.OnTimerTickListener {
 
     private var playButton: PlayButton? = null
     private var player: MediaPlayer? = null
+    private lateinit var countDownTimer: CountDownTimer
+    private var averageBackgroundNoiseAmplitude: Long = 0
 
     private lateinit var timer: Timer
 
@@ -79,7 +82,7 @@ class AudioRecordTest : AppCompatActivity(), Timer.OnTimerTickListener {
             setAudioSource(MediaRecorder.AudioSource.MIC)
             setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             setOutputFile(fileName)
-            setMaxDuration(6000)
+            setMaxDuration(9000)
             setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
             setOnInfoListener { _, what, _ ->
                 if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED) {
@@ -97,7 +100,6 @@ class AudioRecordTest : AppCompatActivity(), Timer.OnTimerTickListener {
             start()
         }
         recorder?.maxAmplitude
-        timer.start()
     }
 
     private fun stopRecording() {
@@ -119,6 +121,12 @@ class AudioRecordTest : AppCompatActivity(), Timer.OnTimerTickListener {
                 true -> "Stop recording"
                 false -> "Start recording"
             }
+            if (mStartRecording) {
+                showToast("Don't speak, calibrating the mic")
+                countDownTimer.start()
+            } else {
+                countDownTimer.cancel()
+            }
             mStartRecording = !mStartRecording
         }
 
@@ -130,7 +138,7 @@ class AudioRecordTest : AppCompatActivity(), Timer.OnTimerTickListener {
 
     internal inner class PlayButton(ctx: Context) : AppCompatButton(ctx) {
         var mStartPlaying = true
-        var clicker: OnClickListener = OnClickListener {
+        private var clicker: OnClickListener = OnClickListener {
             onPlay(mStartPlaying)
             text = when (mStartPlaying) {
                 true -> "Stop playing"
@@ -147,12 +155,31 @@ class AudioRecordTest : AppCompatActivity(), Timer.OnTimerTickListener {
 
     override fun onCreate(icicle: Bundle?) {
         super.onCreate(icicle)
-
         // Record to the external cache directory for visibility
         fileName = "${externalCacheDir?.absolutePath}/audiorecordtest.3gp"
 
         ActivityCompat.requestPermissions(this, permissions, REQUEST_RECORD_AUDIO_PERMISSION)
+        countDownTimer = object : CountDownTimer(2000, 100) {
+            override fun onTick(millisUntilFinished: Long) {
+                val amplitude = recorder?.maxAmplitude ?: 0
+                averageBackgroundNoiseAmplitude = averageBackgroundNoiseAmplitude.plus(amplitude)
+                Log.d(LOG_TAG, "$millisUntilFinished Amplitude: $amplitude")
+            }
 
+            override fun onFinish() {
+                countDownTimer.cancel()
+                averageBackgroundNoiseAmplitude = averageBackgroundNoiseAmplitude.div(20)
+                Log.d(LOG_TAG, averageBackgroundNoiseAmplitude.toString())
+                if (averageBackgroundNoiseAmplitude < MAX_BACKGROUND_NOISE_THRESHOLD) {
+                    showToast("Start speaking")
+                    timer.start()
+                } else {
+                    showToast("Background noise is too much. Move to a quieter place")
+                    stopRecording()
+                }
+            }
+
+        }
         recordButton = RecordButton(this)
         playButton = PlayButton(this)
         timer = Timer(this, SAMPLING_DELAY)
@@ -185,7 +212,7 @@ class AudioRecordTest : AppCompatActivity(), Timer.OnTimerTickListener {
         val maxAmplitudeSinceLastCall = recorder?.maxAmplitude
         if (maxAmplitudeSinceLastCall != null) {
             Log.d(LOG_TAG, "Amplitude: $maxAmplitudeSinceLastCall")
-            if (maxAmplitudeSinceLastCall <= NO_VOLUME_THRESHOLD) {
+            if (maxAmplitudeSinceLastCall <= averageBackgroundNoiseAmplitude) {
                 Log.d(LOG_TAG, "Silence detected")
                 showToast("Silence detected")
                 stopRecording()
