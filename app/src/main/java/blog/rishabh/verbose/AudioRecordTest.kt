@@ -19,9 +19,9 @@ import java.io.IOException
 
 private const val LOG_TAG = "AudioRecordTest"
 private const val REQUEST_RECORD_AUDIO_PERMISSION = 200
-private const val MAX_BACKGROUND_NOISE_THRESHOLD = 6000
-private const val MIN_BACKGROUND_NOISE_THRESHOLD = 1500L
-private const val SAMPLING_DELAY = 1000L
+private const val MAX_BACKGROUND_NOISE_THRESHOLD = 10000
+private const val MIN_BACKGROUND_NOISE_THRESHOLD = 1000
+private const val SAMPLING_DELAY = 100L
 
 class AudioRecordTest : AppCompatActivity(), Timer.OnTimerTickListener {
 
@@ -33,7 +33,9 @@ class AudioRecordTest : AppCompatActivity(), Timer.OnTimerTickListener {
     private var playButton: PlayButton? = null
     private var player: MediaPlayer? = null
     private lateinit var countDownTimer: CountDownTimer
-    private var averageBackgroundNoiseAmplitude: Long = 0
+    private var medianBackgroundNoiseAmplitude: Int = 0
+    private var noiseSampleAmplitudeArray = arrayListOf<Int>()
+    private var recordingSampleArray = arrayListOf<Int>()
 
     private lateinit var timer: Timer
 
@@ -83,7 +85,7 @@ class AudioRecordTest : AppCompatActivity(), Timer.OnTimerTickListener {
             setAudioSource(MediaRecorder.AudioSource.MIC)
             setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
             setOutputFile(fileName)
-            setMaxDuration(9000)
+            setMaxDuration(8000)
             setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
             setOnInfoListener { _, what, _ ->
                 if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED) {
@@ -163,18 +165,25 @@ class AudioRecordTest : AppCompatActivity(), Timer.OnTimerTickListener {
         ActivityCompat.requestPermissions(this, permissions, REQUEST_RECORD_AUDIO_PERMISSION)
         countDownTimer = object : CountDownTimer(2000, 100) {
             override fun onTick(millisUntilFinished: Long) {
-                val amplitude = recorder?.maxAmplitude ?: 0
-                averageBackgroundNoiseAmplitude = averageBackgroundNoiseAmplitude.plus(amplitude)
-                Log.d(LOG_TAG, "$millisUntilFinished Amplitude: $amplitude")
+                val amplitude: Int = recorder?.maxAmplitude ?: 0
+//                medianBackgroundNoiseAmplitude.plus(amplitude)
+                noiseSampleAmplitudeArray.add(amplitude)
+//                Log.d(LOG_TAG, "$millisUntilFinished Amplitude: $amplitude")
             }
 
             override fun onFinish() {
                 countDownTimer.cancel()
                 //discarding first two samples since mic is still getting initialized and the amplitude values are erroneous
-                averageBackgroundNoiseAmplitude = averageBackgroundNoiseAmplitude.div(18)
-                Log.d(LOG_TAG, averageBackgroundNoiseAmplitude.toString())
-                averageBackgroundNoiseAmplitude = Math.max(averageBackgroundNoiseAmplitude, MIN_BACKGROUND_NOISE_THRESHOLD)
-                if (averageBackgroundNoiseAmplitude < MAX_BACKGROUND_NOISE_THRESHOLD) {
+//                medianBackgroundNoiseAmplitude = medianBackgroundNoiseAmplitude.div(18)
+//                Log.d(LOG_TAG, "Avg Amplitude: Max of 1500 & $medianBackgroundNoiseAmplitude")
+//                medianBackgroundNoiseAmplitude = Math.max(medianBackgroundNoiseAmplitude, MIN_BACKGROUND_NOISE_THRESHOLD)
+                noiseSampleAmplitudeArray.sort()
+                Log.d(LOG_TAG, "Amplitude Array: $noiseSampleAmplitudeArray")
+                medianBackgroundNoiseAmplitude = MIN_BACKGROUND_NOISE_THRESHOLD.coerceAtLeast(
+                    Utils.median(noiseSampleAmplitudeArray)
+                )
+                Log.d(LOG_TAG, "Median Amplitude: $medianBackgroundNoiseAmplitude")
+                if (medianBackgroundNoiseAmplitude < MAX_BACKGROUND_NOISE_THRESHOLD) {
                     showToast("Start speaking")
                     timer.start()
                 } else {
@@ -209,17 +218,27 @@ class AudioRecordTest : AppCompatActivity(), Timer.OnTimerTickListener {
         player?.release()
         player = null
         timer.stop()
+        countDownTimer.cancel()
     }
 
-    override fun onTimerTick(duration: Long) {
-        Log.d(LOG_TAG, "Timer: $duration")
-        val maxAmplitudeSinceLastCall = recorder?.maxAmplitude
-        if (maxAmplitudeSinceLastCall != null) {
-            Log.d(LOG_TAG, "Amplitude: $maxAmplitudeSinceLastCall")
-            if (maxAmplitudeSinceLastCall <= averageBackgroundNoiseAmplitude) {
-                Log.d(LOG_TAG, "Silence detected")
-                showToast("Silence detected")
-                stopRecording()
+    override fun onTimerTick(duration: Long, noOfTick: Int) {
+        val amplitude = recorder?.maxAmplitude
+        Log.d(LOG_TAG, "Timer: $duration, Amplitude: $amplitude")
+        if (amplitude != null) {
+//            Log.d(LOG_TAG, "Amplitude: $maxAmplitudeSinceLastCall, no: $noOfTick")
+            recordingSampleArray.add(amplitude)
+            if (noOfTick % 15 == 0) {
+                recordingSampleArray.sort()
+                Log.d(LOG_TAG, "Amplitude Array: $recordingSampleArray")
+//                val currentMedianAmplitude = Utils.median(recordingSampleArray)
+                val maxAmplitudeSinceLastSamplingThreshold: Int = recordingSampleArray.max() ?: 0
+                Log.d(LOG_TAG, "Max Amplitude for last 1.5 sec: $maxAmplitudeSinceLastSamplingThreshold")
+                if (maxAmplitudeSinceLastSamplingThreshold <= medianBackgroundNoiseAmplitude) {
+                    showToast("Silence Detected")
+                    Log.d(LOG_TAG, "Silence Detected")
+                    stopRecording()
+                }
+                recordingSampleArray.clear()
             }
         }
     }

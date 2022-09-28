@@ -5,7 +5,7 @@ import android.os.Looper
 
 class Timer(listener: OnTimerTickListener, delay: Long) {
     interface OnTimerTickListener {
-        fun onTimerTick(duration: Long)
+        fun onTimerTick(duration: Long, noOfTick: Int)
     }
 
     private var handler = Handler(Looper.getMainLooper())
@@ -13,13 +13,16 @@ class Timer(listener: OnTimerTickListener, delay: Long) {
 
     private var duration = 0L
     private var delay: Long = 1000L
+    private var noOfTick: Int = 0
 
     init {
         this.delay = delay
+        noOfTick = 0
         runnable = Runnable {
             duration += delay
+            noOfTick += 1
             handler.postDelayed(runnable, delay)
-            listener.onTimerTick(duration)
+            listener.onTimerTick(duration, noOfTick)
         }
     }
 
@@ -30,5 +33,6 @@ class Timer(listener: OnTimerTickListener, delay: Long) {
     fun stop() {
         handler.removeCallbacks(runnable)
         duration = 0
+        noOfTick = 0
     }
 }
