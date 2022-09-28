@@ -19,8 +19,9 @@ import java.io.IOException
 
 private const val LOG_TAG = "AudioRecordTest"
 private const val REQUEST_RECORD_AUDIO_PERMISSION = 200
-private const val MAX_BACKGROUND_NOISE_THRESHOLD = 5000
-private const val SAMPLING_DELAY = 1500L
+private const val MAX_BACKGROUND_NOISE_THRESHOLD = 6000
+private const val MIN_BACKGROUND_NOISE_THRESHOLD = 1500L
+private const val SAMPLING_DELAY = 1000L
 
 class AudioRecordTest : AppCompatActivity(), Timer.OnTimerTickListener {
 
@@ -99,7 +100,6 @@ class AudioRecordTest : AppCompatActivity(), Timer.OnTimerTickListener {
 
             start()
         }
-        recorder?.maxAmplitude
     }
 
     private fun stopRecording() {
@@ -110,6 +110,7 @@ class AudioRecordTest : AppCompatActivity(), Timer.OnTimerTickListener {
         recordButton?.mStartRecording = true
         recordButton?.text = "Start recording"
         timer.stop()
+        countDownTimer.cancel()
         recorder = null
     }
 
@@ -156,7 +157,8 @@ class AudioRecordTest : AppCompatActivity(), Timer.OnTimerTickListener {
     override fun onCreate(icicle: Bundle?) {
         super.onCreate(icicle)
         // Record to the external cache directory for visibility
-        fileName = "${externalCacheDir?.absolutePath}/audiorecordtest.3gp"
+        fileName = "${externalCacheDir?.absolutePath}/audiorecordtest.mp3"
+        Log.d(LOG_TAG, fileName)
 
         ActivityCompat.requestPermissions(this, permissions, REQUEST_RECORD_AUDIO_PERMISSION)
         countDownTimer = object : CountDownTimer(2000, 100) {
@@ -168,8 +170,10 @@ class AudioRecordTest : AppCompatActivity(), Timer.OnTimerTickListener {
 
             override fun onFinish() {
                 countDownTimer.cancel()
-                averageBackgroundNoiseAmplitude = averageBackgroundNoiseAmplitude.div(20)
+                //discarding first two samples since mic is still getting initialized and the amplitude values are erroneous
+                averageBackgroundNoiseAmplitude = averageBackgroundNoiseAmplitude.div(18)
                 Log.d(LOG_TAG, averageBackgroundNoiseAmplitude.toString())
+                averageBackgroundNoiseAmplitude = Math.max(averageBackgroundNoiseAmplitude, MIN_BACKGROUND_NOISE_THRESHOLD)
                 if (averageBackgroundNoiseAmplitude < MAX_BACKGROUND_NOISE_THRESHOLD) {
                     showToast("Start speaking")
                     timer.start()
